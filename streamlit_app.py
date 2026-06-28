@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import io
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
@@ -22,7 +23,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Executive Color Scheme & Clean Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
     html, body, [class*="css"], .stApp {
         font-family: 'Inter', sans-serif !important;
@@ -36,19 +37,70 @@ st.markdown("""
     /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #0f172a !important;
-        color: #94a3b8 !important;
+        color: #f8fafc !important;
         border-right: 1px solid #1e293b;
     }
     [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6 {
         color: #ffffff !important;
+        font-weight: 800 !important;
     }
     [data-testid="stSidebar"] .stMarkdown p {
-        color: #94a3b8 !important;
-    }
-    [data-testid="stSidebar"] label {
         color: #f1f5f9 !important;
+    }
+    
+    /* Ultimate Sidebar Contrast & Visibility Overrides */
+    [data-testid="stSidebar"] * {
+        color: #ffffff !important;
+    }
+    
+    /* Explicitly make label, paragraphs, and spans ultra clear and bold */
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] small,
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] span {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    
+    /* Make sure radio choices (below/above €100k) are bright white and bold */
+    [data-testid="stSidebar"] [data-testid="stRadio"] * {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    
+    /* Make sure slider label and markers are bright white and bold */
+    [data-testid="stSidebar"] [data-testid="stSlider"] * {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    
+    /* Multi-select inputs text must be dark so chips are legible on light backgrounds */
+    [data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[role="button"] {
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[role="button"] * {
+        color: #0f172a !important;
         font-weight: 600 !important;
-        font-size: 0.9rem !important;
+    }
+    
+    /* File uploader button text and status */
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section button {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section button * {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px dashed rgba(255, 255, 255, 0.2) !important;
     }
     
     /* Metric Card Styling */
@@ -142,6 +194,156 @@ st.markdown("""
 # ==========================================
 # 2. DATA INGESTION & PIPELINE PREPROCESSING
 # ==========================================
+# Embedded copy of the core bank churn dataset to make the app 100% self-contained
+EMBEDDED_CHURN_DATA = """Year,CustomerId,Surname,CreditScore,Geography,Gender,Age,Tenure,Balance,NumOfProducts,HasCrCard,IsActiveMember,EstimatedSalary,Exited
+2025,15634602,Hargrave,619,France,Female,42,2,0,1,1,1,101348.88,1
+2025,15647311,Hill,608,Spain,Female,41,1,83807.86,1,0,1,112542.58,0
+2025,15619304,Onio,502,France,Female,42,8,159660.8,3,1,0,113931.57,1
+2025,15701354,Boni,699,France,Female,39,1,0,2,0,0,93826.63,0
+2025,15737888,Mitchell,850,Spain,Female,43,2,125510.82,1,1,1,79084.1,0
+2025,15574012,Chu,645,Spain,Male,44,8,113755.78,2,1,0,149756.71,1
+2025,15592531,Bartlett,822,France,Male,50,7,0,2,1,1,10062.8,0
+2025,15656148,Obinna,376,Germany,Female,29,4,115046.74,4,1,0,119346.88,1
+2025,15792365,He,501,France,Male,44,4,142051.07,2,0,1,74940.5,0
+2025,15592389,H?,684,France,Male,27,2,134603.88,1,1,1,71725.73,0
+2025,15767821,Bearce,528,France,Male,31,6,102016.72,2,0,0,80181.12,0
+2025,15737173,Andrews,497,Spain,Male,24,3,0,2,1,0,76390.01,0
+2025,15632264,Kay,476,France,Female,34,10,0,2,1,0,26260.98,0
+2025,15691483,Chin,549,France,Female,25,5,0,2,0,0,190857.79,0
+2025,15600882,Scott,635,Spain,Female,35,7,0,2,1,1,65951.65,0
+2025,15643966,Goforth,616,Germany,Male,45,3,143129.41,2,0,1,64327.26,0
+2025,15737452,Romeo,653,Germany,Male,58,1,132602.88,1,1,0,5097.67,1
+2025,15788218,Henderson,549,Spain,Female,24,9,0,2,1,1,14406.41,0
+2025,15661507,Muldrow,587,Spain,Male,45,6,0,1,0,0,158684.81,0
+2025,15568982,Hao,726,France,Female,24,6,0,2,1,1,54724.03,0
+2025,15577657,McDonald,732,France,Male,41,8,0,2,1,1,170886.17,0
+2025,15597945,Dellucci,636,Spain,Female,32,8,0,2,1,0,138555.46,0
+2025,15699309,Gerasimov,510,Spain,Female,38,4,0,1,1,0,118913.53,1
+2025,15725737,Mosman,669,France,Male,46,3,0,2,0,1,8487.75,0
+2025,15625047,Yen,846,France,Female,38,5,0,1,1,1,187616.16,0
+2025,15738191,Maclean,577,France,Male,25,3,0,2,0,1,124508.29,0
+2025,15736816,Young,756,Germany,Male,36,2,136815.64,1,1,1,170041.95,0
+2025,15700772,Nebechi,571,France,Male,44,9,0,2,0,0,38433.35,0
+2025,15728693,McWilliams,574,Germany,Female,43,3,141349.43,1,1,1,100187.43,0
+2025,15656300,Lucciano,411,France,Male,29,0,59697.17,2,1,1,53483.21,0
+2025,15589475,Azikiwe,591,Spain,Female,39,3,0,3,1,0,140469.38,1
+2025,15706552,Odinakachukwu,533,France,Male,36,7,85311.7,1,0,1,156731.91,0
+2025,15750181,Sanderson,553,Germany,Male,41,9,110112.54,2,0,0,81898.81,0
+2025,15659428,Maggard,520,Spain,Female,42,6,0,2,1,1,34410.55,0
+2025,15732963,Clements,722,Spain,Female,29,9,0,2,1,1,142033.07,0
+2025,15794171,Lombardo,475,France,Female,45,0,134264.04,1,1,0,27822.99,1
+2025,15788448,Watson,490,Spain,Male,31,3,145260.23,1,0,1,114066.77,0
+2025,15729599,Lorenzo,804,Spain,Male,33,7,76548.6,1,0,1,98453.45,0
+2025,15717426,Armstrong,850,France,Male,36,7,0,1,1,1,40812.9,0
+2025,15585768,Cameron,582,Germany,Male,41,6,70349.48,2,0,1,178074.04,0
+2025,15619360,Hsiao,472,Spain,Male,40,4,0,1,1,0,70154.22,0
+2025,15738148,Clarke,465,France,Female,51,8,122522.32,1,0,0,181297.65,1
+2025,15687946,Osborne,556,France,Female,61,2,117419.35,1,1,1,94153.83,0
+2025,15755196,Lavine,834,France,Female,49,2,131394.56,1,0,0,194365.76,1
+2025,15684171,Bianchi,660,Spain,Female,61,5,155931.11,1,1,1,158338.39,0
+2025,15754849,Tyler,776,Germany,Female,32,4,109421.13,2,1,1,126517.46,0
+2025,15602280,Martin,829,Germany,Female,27,9,112045.67,1,1,1,119708.21,1
+2025,15771573,Okagbue,637,Germany,Female,39,9,137843.8,1,1,1,117622.8,1
+2025,15766205,Yin,550,Germany,Male,38,2,103391.38,1,0,1,90878.13,0
+2025,15771873,Buccho,776,Germany,Female,37,2,103769.22,2,1,0,194099.12,0
+2025,15616550,Chidiebele,698,Germany,Male,44,10,116363.37,2,1,0,198059.16,0
+2025,15768193,Trevisani,585,Germany,Male,36,5,146050.97,2,0,0,86424.57,0
+2025,15683553,O'Brien,788,France,Female,33,5,0,2,0,0,116978.19,0
+2025,15702298,Parkhill,655,Germany,Male,41,8,125561.97,1,0,0,164040.94,1
+2025,15569590,Yoo,601,Germany,Male,42,1,98495.72,1,1,0,40014.76,1
+2025,15760861,Phillipps,619,France,Male,43,1,125211.92,1,1,1,113410.49,0
+2025,15630053,Tsao,656,France,Male,45,5,127864.4,1,1,0,87107.57,0
+2025,15647091,Endrizzi,725,Germany,Male,19,0,75888.2,1,0,0,45613.75,0
+2025,15623944,T'ien,511,Spain,Female,66,4,0,1,1,0,1643.11,1
+2025,15804771,Velazquez,614,France,Male,51,4,40685.92,1,1,1,46775.28,0
+2025,15651280,Hunter,742,Germany,Male,35,5,136857,1,0,0,84509.57,0
+2025,15773469,Clark,687,Germany,Female,27,9,152328.88,2,0,0,126494.82,0
+2025,15702014,Jeffrey,555,Spain,Male,33,1,56084.69,2,0,0,178798.13,0
+2025,15751208,Pirozzi,684,Spain,Male,56,8,78707.16,1,1,1,99398.36,0
+2025,15592461,Jackson,603,Germany,Male,26,4,109166.37,1,1,1,92840.67,0
+2025,15789484,Hammond,751,Germany,Female,36,6,169831.46,2,1,1,27758.36,0
+2025,15696061,Brownless,581,Germany,Female,34,1,101633.04,1,1,0,110431.51,0
+2025,15641582,Chibugo,735,Germany,Male,43,10,123180.01,2,1,1,196673.28,0
+2025,15638424,Glauert,661,Germany,Female,35,5,150725.53,2,0,1,113656.85,0
+2025,15755648,Pisano,675,France,Female,21,8,98373.26,1,1,0,18203,0
+2025,15703793,Konovalova,738,Germany,Male,58,2,133745.44,4,1,0,28373.86,1
+2025,15620344,McKee,813,France,Male,29,6,0,1,1,0,33953.87,0
+2025,15812518,Palermo,657,Spain,Female,37,0,163607.18,1,0,1,44203.55,0
+2025,15779052,Ballard,604,Germany,Female,25,5,157780.84,2,1,1,58426.81,0
+2025,15770811,Wallace,519,France,Male,36,9,0,2,0,1,145562.4,0
+2025,15780961,Cavenagh,735,France,Female,21,1,178718.19,2,1,0,22388,0
+2025,15614049,Hu,664,France,Male,55,8,0,2,1,1,139161.64,0
+2025,15662085,Read,678,France,Female,32,9,0,1,1,1,148210.64,0
+2025,15575185,Bushell,757,Spain,Male,33,5,77253.22,1,0,1,194239.63,0
+2025,15803136,Postle,416,Germany,Female,41,10,122189.66,2,1,0,98301.61,0
+2025,15706021,Buley,665,France,Female,34,1,96645.54,2,0,0,171413.66,0
+2025,15663706,Leonard,777,France,Female,32,2,0,1,1,0,136458.19,1
+2025,15641732,Mills,543,France,Female,36,3,0,2,0,0,26019.59,0
+2025,15701164,Onyeorulu,506,France,Female,34,4,90307.62,1,1,1,159235.29,0
+2025,15738751,Beit,493,France,Female,46,4,0,2,1,0,1907.66,0
+2025,15805254,Ndukaku,652,Spain,Female,75,10,0,2,1,1,114675.75,0
+2025,15762418,Gant,750,Spain,Male,22,3,121681.82,1,1,0,128643.35,1
+2025,15625759,Rowley,729,France,Male,30,9,0,2,1,0,151869.35,0
+2025,15622897,Sharpe,646,France,Female,46,4,0,3,1,0,93251.42,1
+2025,15767954,Osborne,635,Germany,Female,28,3,81623.67,2,1,1,156791.36,0
+2025,15757535,Heap,647,Spain,Female,44,5,0,3,1,1,174205.22,1
+2025,15731511,Ritchie,808,France,Male,45,7,118626.55,2,1,0,147132.46,0
+2025,15809248,Cole,524,France,Female,36,10,0,2,1,0,109614.57,0
+2025,15640635,Capon,769,France,Male,29,8,0,2,1,1,172290.61,0
+2025,15676966,Capon,730,Spain,Male,42,4,0,2,0,1,85982.47,0
+2025,15699461,Fiorentini,515,Spain,Male,35,10,176273.95,1,0,1,121277.78,0
+2025,15738721,Graham,773,Spain,Male,41,9,102827.44,1,0,1,64595.25,0
+2025,15693683,Yuille,814,Germany,Male,29,8,97086.4,2,1,1,197276.13,0
+2025,15604348,Allard,710,Spain,Male,22,8,0,2,0,0,99645.04,0
+2025,15633059,Fanucci,413,France,Male,34,9,0,2,0,0,6534.18,0
+2025,15808582,Fu,665,France,Female,40,6,0,1,1,1,161848.03,0
+2025,15743192,Hung,623,France,Female,44,6,0,2,0,0,167183.38,0
+2025,15579208,Chikezie,550,France,Female,48,6,0,2,1,1,191870.28,0
+2025,15684951,He,542,France,Female,59,2,68892.77,2,1,0,7905.06,1
+2025,15662063,McIver,746,France,Male,36,7,142400.77,1,1,1,193438.69,0
+2025,15754509,Uwakwe,744,France,Female,44,3,0,2,1,1,189016.14,0
+2025,15685706,Bird,731,France,Female,40,7,118991.79,1,1,1,156048.64,0
+2025,15641835,Anderson,683,France,Male,72,3,140997.26,1,0,1,52876.41,0
+2025,15658693,Aksyonova,827,France,Female,60,2,0,2,0,1,60615.83,0
+2025,15722548,Fisher,540,France,Male,48,0,148116.48,1,0,0,116973.48,0
+2025,15650288,Summers,634,Germany,Male,35,6,116269.01,1,1,0,129964.94,0
+2025,15629448,Brady,632,Spain,Male,38,1,120599.21,1,1,0,92816.86,0
+2025,15716164,Nicholls,501,France,Female,41,3,144260.5,1,1,0,172114.67,0
+2025,15807609,Yuan,650,Spain,Female,25,3,86605.5,3,1,0,16649.31,1
+2025,15578977,Robinson,786,France,Male,34,9,0,2,1,0,144517.19,0
+2025,15677369,Golubov,554,Germany,Female,37,4,58629.97,1,0,0,182038.6,0
+2025,15804072,Chen,701,Spain,Female,42,5,0,2,0,0,24210.56,0
+2025,15696859,Oldham,474,France,Male,45,10,0,2,0,0,172175.9,0
+2025,15653780,Kambinachi,621,France,Female,43,5,0,1,1,1,47578.45,0
+2025,15721658,Fleming,672,Spain,Female,56,2,209767.31,2,1,1,150694.42,1
+2025,15578761,Cunningham,459,Spain,Female,42,6,129634.25,2,1,1,177683.02,1
+2025,15736879,Obinna,669,France,Male,23,1,0,2,0,0,66088.83,0
+2025,15571973,Chinwemma,776,France,Female,38,2,169824.46,1,1,0,169291.7,0
+2025,15626742,Carpenter,694,France,Male,36,3,97530.25,1,1,1,117140.41,0
+2025,15672692,Yin,787,France,Female,42,10,145988.65,2,1,1,79510.37,0
+2025,15673570,Olsen,580,France,Male,37,9,0,2,0,1,77108.66,0
+2025,15679432,Panicucci,601,France,Female,43,2,0,1,1,0,49713.87,1
+2025,15593295,Greathouse,548,France,Male,57,6,76165.65,1,1,1,133537.53,0
+2025,15804814,Ts'ui,759,France,Male,40,4,0,2,1,0,124615.59,0
+2025,15778934,Napolitani,678,Spain,Female,49,8,0,2,0,1,98090.69,0
+2025,15595221,Trevisano,850,Germany,Female,33,7,134678.13,1,1,0,113177.95,0
+2025,15715541,Yang,850,France,Female,42,9,113311.11,1,1,1,198193.75,0
+2025,15639277,Lin,678,France,Female,41,9,0,1,0,0,13160.03,0
+2025,15798850,Goddard,576,France,Male,32,7,0,2,1,0,4660.91,0
+2025,15776348,Rogers,835,Germany,Male,20,4,124365.42,1,0,0,180197.74,1
+2025,15726985,Yefremova,850,France,Female,39,0,104386.53,1,1,0,105886.77,0
+2025,15585823,Wilson,627,France,Male,31,8,128131.73,1,1,0,96131.47,0
+2025,15728167,Abramovich,667,France,Male,44,2,122806.95,1,0,0,15120.86,0
+2025,15762928,Venables,548,Spain,Male,44,8,0,1,1,0,16989.77,0
+2025,15751774,Monnier,774,France,Male,76,4,112510.89,1,1,1,143133.18,0
+2025,15657342,Dawson,850,Germany,Male,28,4,147972.19,1,1,0,60708.72,1
+2025,15716284,Ward,543,France,Male,43,9,0,2,1,1,78858.07,0
+2025,15722212,Edmondstone,696,France,Female,41,8,0,2,0,0,28276.83,0
+2025,15749300,Teng,556,France,Female,47,2,139914.27,1,1,1,50390.98,0
+2025,15690188,Maclean,631,France,Male,33,7,0,1,1,1,58043.02,1
+2025,15728352,Yermakov,623,France,Male,27,4,120509.81,1,0,0,142170.44,0
+2025,15812920,Nwabugwu,607,Germany,Male,40,5,90594.55,1,0,1,181598.25,0"""
+
 @st.cache_data
 def get_default_data():
     """Generates elegant, realistic fallback/demo data in case the csv is not found."""
@@ -200,7 +402,7 @@ def get_default_data():
     return df
 
 def clean_dataframe_columns(df):
-    """Clean up byte order marks (BOM) and trailing spaces to prevent KeyErrors."""
+    """Clean up byte order marks (BOM) and trailing spaces, and match columns robustly."""
     if df is not None:
         # Clean BOM and whitespace from column headers
         df.columns = [str(col).replace('\ufeff', '').strip() for col in df.columns]
@@ -209,22 +411,37 @@ def clean_dataframe_columns(df):
         rename_dict = {}
         for col in df.columns:
             col_clean = col.lower().replace('_', '').replace(' ', '')
-            if col_clean == 'customerid': rename_dict[col] = 'CustomerId'
-            elif col_clean == 'surname': rename_dict[col] = 'Surname'
-            elif col_clean == 'creditscore': rename_dict[col] = 'CreditScore'
-            elif col_clean == 'geography': rename_dict[col] = 'Geography'
-            elif col_clean == 'gender': rename_dict[col] = 'Gender'
-            elif col_clean == 'age': rename_dict[col] = 'Age'
-            elif col_clean == 'tenure': rename_dict[col] = 'Tenure'
-            elif col_clean == 'balance': rename_dict[col] = 'Balance'
-            elif col_clean == 'numofproducts': rename_dict[col] = 'NumOfProducts'
-            elif col_clean == 'hascrcard': rename_dict[col] = 'HasCrCard'
-            elif col_clean == 'isactivemember': rename_dict[col] = 'IsActiveMember'
-            elif col_clean == 'estimatedsalary': rename_dict[col] = 'EstimatedSalary'
-            elif col_clean == 'exited': rename_dict[col] = 'Exited'
+            
+            if 'customerid' in col_clean: rename_dict[col] = 'CustomerId'
+            elif 'surname' in col_clean: rename_dict[col] = 'Surname'
+            elif 'creditscore' in col_clean: rename_dict[col] = 'CreditScore'
+            elif 'geography' in col_clean or 'country' in col_clean: rename_dict[col] = 'Geography'
+            elif 'gender' in col_clean or 'sex' in col_clean: rename_dict[col] = 'Gender'
+            elif 'age' in col_clean: rename_dict[col] = 'Age'
+            elif 'tenure' in col_clean: rename_dict[col] = 'Tenure'
+            elif 'balance' in col_clean: rename_dict[col] = 'Balance'
+            elif 'numofproducts' in col_clean or 'products' in col_clean: rename_dict[col] = 'NumOfProducts'
+            elif 'hascrcard' in col_clean or 'creditcard' in col_clean: rename_dict[col] = 'HasCrCard'
+            elif 'isactivemember' in col_clean or 'activemember' in col_clean or 'active' in col_clean: rename_dict[col] = 'IsActiveMember'
+            elif 'estimatedsalary' in col_clean or 'salary' in col_clean: rename_dict[col] = 'EstimatedSalary'
+            elif 'exited' in col_clean or 'churn' in col_clean: rename_dict[col] = 'Exited'
         
         df = df.rename(columns=rename_dict)
     return df
+
+def validate_dataframe_schema(df):
+    """Validates that all essential columns are present in the DataFrame."""
+    required_cols = [
+        'CreditScore', 'Geography', 'Gender', 'Age', 'Tenure', 
+        'Balance', 'NumOfProducts', 'HasCrCard', 'IsActiveMember', 
+        'EstimatedSalary', 'Exited'
+    ]
+    if df is None:
+        return False, required_cols
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        return False, missing
+    return True, []
 
 @st.cache_data
 def process_data(df):
@@ -273,28 +490,62 @@ st.sidebar.subheader("📥 Upload Custom Data")
 uploaded_file = st.sidebar.file_uploader(
     "Upload Churn CSV File (Optional)",
     type=["csv"],
-    help="Upload your custom European bank customer churn dataset to populate the dashboard dynamically."
+    help="Upload your custom European bank customer churn dataset to populate the dashboard with your own real records dynamically."
 )
 
 if uploaded_file is not None:
     try:
-        df_raw = pd.read_csv(uploaded_file)
-        df_raw = clean_dataframe_columns(df_raw)
-        st.sidebar.success("✅ Custom Dataset loaded successfully!")
+        uploaded_df = pd.read_csv(uploaded_file)
+        cleaned_df = clean_dataframe_columns(uploaded_df)
+        is_valid, missing_cols = validate_dataframe_schema(cleaned_df)
+        if is_valid:
+            df_raw = cleaned_df
+            st.sidebar.success("✅ Custom Dataset loaded successfully!")
+        else:
+            st.sidebar.error(f"⚠️ Error: Uploaded file is missing required columns: {', '.join(missing_cols)}. Falling back to default data.")
+            df_raw = None
     except Exception as e:
         st.sidebar.error(f"⚠️ Error parsing uploaded CSV: {e}. Falling back to default.")
         df_raw = None
 
-# If no file uploaded, look for local csv file
+# If no file uploaded or validation failed, look for local csv file
 if df_raw is None:
-    if os.path.exists("churn_data.csv"):
+    possible_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "churn_data.csv"),
+        "churn_data.csv",
+        os.path.join(os.getcwd(), "churn_data.csv")
+    ]
+    
+    local_csv_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            local_csv_path = path
+            break
+            
+    if local_csv_path is not None:
         try:
-            df_raw = pd.read_csv("churn_data.csv")
-            df_raw = clean_dataframe_columns(df_raw)
+            local_df = pd.read_csv(local_csv_path)
+            local_df = clean_dataframe_columns(local_df)
+            is_valid, missing_cols = validate_dataframe_schema(local_df)
+            if is_valid:
+                df_raw = local_df
         except Exception:
-            df_raw = clean_dataframe_columns(get_default_data())
-    else:
-        df_raw = clean_dataframe_columns(get_default_data())
+            pass
+
+# If STILL no dataset loaded, load from EMBEDDED_CHURN_DATA (our high fidelity local dataset)
+if df_raw is None:
+    try:
+        embedded_df = pd.read_csv(io.StringIO(EMBEDDED_CHURN_DATA))
+        embedded_df = clean_dataframe_columns(embedded_df)
+        is_valid, missing_cols = validate_dataframe_schema(embedded_df)
+        if is_valid:
+            df_raw = embedded_df
+    except Exception:
+        pass
+
+# Final safety fallback to generated data
+if df_raw is None:
+    df_raw = clean_dataframe_columns(get_default_data())
 
 df_clean = process_data(df_raw)
 
@@ -388,7 +639,7 @@ if df_clean is not None:
         key="sb_cs"
     )
     
-    # Analyst profile card at bottom
+    # Analyst profile card at the bottom of the sidebar
     st.sidebar.markdown("""
     <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #1e293b; display: flex; align-items: center; gap: 12px;">
         <div style="width: 40px; height: 40px; border-radius: 50%; background-color: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; text-align: center;">AK</div>
@@ -416,7 +667,7 @@ if df_clean is not None:
     elif balance_choice == "Above €100,000":
         filtered_df = filtered_df[filtered_df['Balance'] >= 100000]
         
-    premium_balance_threshold = 100000.0
+    premium_balance_threshold = 100000.0  # high-balance premium standard definition
 else:
     filtered_df = pd.DataFrame()
 
@@ -440,7 +691,7 @@ def render_metric_card(title, value, delta_val=None, is_positive=False, suffix="
     """
     return st.markdown(card_html, unsafe_allow_html=True)
 
-# Main Title & Subtitle
+# Main Title & Subtitle with Sleek Interface Theme
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.25rem; margin-bottom: 2rem; margin-top: 1rem;">
   <div style="display: flex; flex-direction: column;">
@@ -856,9 +1107,10 @@ if filtered_df is not None and not filtered_df.empty:
         st.subheader("🔮 Predictive Machine Learning Risk Engine")
         st.write("Train a Random Forest classifier in real-time on your filtered segment data to estimate individual churn risk profile probabilities.")
         
+        # Preparation of machine learning framework
         ml_df = filtered_df.copy()
         
-        if len(ml_df) > 50:
+        if len(ml_df) > 50: # Ensure enough data exists to train the predictive model
             
             # Encode Categorical Fields
             le_geo = LabelEncoder()

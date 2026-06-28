@@ -532,11 +532,22 @@ df_clean = process_data(df_raw)
 # 3. SIDEBAR NAVIGATION & DYNAMIC FILTERS
 # ==========================================
 st.sidebar.markdown("""
-<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding: 0.5rem 0.25rem;">
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; padding: 0.5rem 0.25rem;">
     <div style="width: 36px; height: 36px; background-color: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #ffffff; font-size: 1.25rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">🏦</div>
     <div style="display: flex; flex-direction: column;">
         <span style="font-weight: 800; font-size: 1.0rem; letter-spacing: -0.02em; color: #ffffff; line-height: 1.2;">European Central Bank</span>
         <span style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Churn Intelligence</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Analyst profile card at the top of the sidebar, right below the header with a nice dividing border
+st.sidebar.markdown("""
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding: 0.5rem 0.25rem; border-bottom: 1px solid #1e293b; padding-bottom: 1.5rem;">
+    <div style="width: 40px; height: 40px; border-radius: 50%; background-color: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; text-align: center;">AK</div>
+    <div>
+        <p style="font-size: 0.875rem; font-weight: 600; color: #ffffff; margin: 0;">Aksh Kumar Jha</p>
+        <p style="font-size: 0.75rem; color: #94a3b8; margin: 0;">Lead Financial Analyst and Advisor</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -617,17 +628,6 @@ if df_clean is not None:
         value=(min_score, max_score),
         key="sb_cs"
     )
-    
-    # Analyst profile card at the bottom of the sidebar
-    st.sidebar.markdown("""
-    <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #1e293b; display: flex; align-items: center; gap: 12px;">
-        <div style="width: 40px; height: 40px; border-radius: 50%; background-color: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; text-align: center;">AK</div>
-        <div>
-            <p style="font-size: 0.875rem; font-weight: 600; color: #ffffff; margin: 0;">Aksh Kumar Jha</p>
-            <p style="font-size: 0.75rem; color: #94a3b8; margin: 0;">Lead Financial Analyst and Advisor</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
     
     # Apply filters systematically
     filtered_df = df_clean[

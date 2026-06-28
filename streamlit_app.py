@@ -689,6 +689,8 @@ if filtered_df is not None and not filtered_df.empty:
     total_customers = len(filtered_df)
     churn_count = len(filtered_df[filtered_df['Exited'] == 1])
     overall_churn_rate = (churn_count / total_customers * 100) if total_customers > 0 else 0.0
+    avg_tenure = filtered_df['Tenure'].mean() if total_customers > 0 else 0.0
+    baseline_avg_tenure = df_clean['Tenure'].mean() if len(df_clean) > 0 else 5.01
     
     # Premium / High-Value Customers (Balances >= €100k)
     high_value_df = filtered_df[filtered_df['Balance'] >= premium_balance_threshold]
@@ -714,34 +716,33 @@ if filtered_df is not None and not filtered_df.empty:
     
     with kpi_col1:
         render_metric_card(
-            title="Overall Churn Rate",
-            value=f"{overall_churn_rate:.2f}",
-            delta_val="Baseline standard: 20.37%" if len(filtered_df) == len(df_clean) else f"Filtered size: {total_customers}",
-            is_positive=(overall_churn_rate < 20.37),
-            suffix="%"
+            title="Total Customers",
+            value=f"{total_customers:,}",
+            delta_val=f"Baseline: {len(df_clean):,}" if len(filtered_df) < len(df_clean) else "Full portfolio live",
+            is_positive=True
         )
     with kpi_col2:
         render_metric_card(
-            title="High-Value Churn Ratio",
-            value=f"{hv_churn_rate:.1f}",
-            delta_val=f"Premium Cust: {total_hv}",
-            is_positive=(hv_churn_rate < overall_churn_rate),
+            title="Overall Churn Rate",
+            value=f"{overall_churn_rate:.2f}",
+            delta_val="Baseline standard: 20.37%" if len(filtered_df) == len(df_clean) else f"Target standard: 20.37%",
+            is_positive=(overall_churn_rate < 20.37),
             suffix="%"
         )
     with kpi_col3:
+        render_metric_card(
+            title="Average Tenure",
+            value=f"{avg_tenure:.1f}",
+            delta_val=f"Baseline: {baseline_avg_tenure:.1f} Yrs",
+            is_positive=(avg_tenure >= baseline_avg_tenure),
+            suffix=" Yrs"
+        )
+    with kpi_col4:
         render_metric_card(
             title="Highest Risk Region",
             value=highest_risk_region,
             delta_val=f"Churn rate: {highest_risk_rate:.1f}%",
             is_positive=False
-        )
-    with kpi_col4:
-        render_metric_card(
-            title="Engagement Risk Gap",
-            value=f"{engagement_gap:.1f}",
-            delta_val="Inactive vs Active Churn",
-            is_positive=(engagement_gap < 10.0),
-            suffix=" pp"
         )
         
     st.markdown("<br>", unsafe_allow_html=True)

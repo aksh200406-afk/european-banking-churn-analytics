@@ -13,7 +13,7 @@ from sklearn.preprocessing import LabelEncoder
 # 1. PAGE CONFIGURATION & THEME STYLING
 # ==========================================
 st.set_page_config(
-    page_title="EuroBank Churn Analytics Hub",
+    page_title="European Central Bank Churn Intelligence Hub",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -533,10 +533,10 @@ df_clean = process_data(df_raw)
 # ==========================================
 st.sidebar.markdown("""
 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; padding: 0.5rem 0.25rem;">
-    <div style="width: 36px; height: 36px; background-color: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #ffffff; font-size: 1.25rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">B</div>
+    <div style="width: 36px; height: 36px; background-color: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #ffffff; font-size: 1.25rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">🏦</div>
     <div style="display: flex; flex-direction: column;">
-        <span style="font-weight: 800; font-size: 1.15rem; letter-spacing: -0.02em; color: #ffffff; line-height: 1.2;">EuroBank AI</span>
-        <span style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Churn Intelligence</span>
+        <span style="font-weight: 800; font-size: 1.0rem; letter-spacing: -0.02em; color: #ffffff; line-height: 1.2;">European Central Bank</span>
+        <span style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Churn Intelligence</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -624,7 +624,7 @@ if df_clean is not None:
         <div style="width: 40px; height: 40px; border-radius: 50%; background-color: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; text-align: center;">AK</div>
         <div>
             <p style="font-size: 0.875rem; font-weight: 600; color: #ffffff; margin: 0;">Aksh Kumar Jha</p>
-            <p style="font-size: 0.75rem; color: #64748b; margin: 0;">Lead Analyst</p>
+            <p style="font-size: 0.75rem; color: #94a3b8; margin: 0;">Lead Financial Analyst and Advisor</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -674,7 +674,7 @@ def render_metric_card(title, value, delta_val=None, is_positive=False, suffix="
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.25rem; margin-bottom: 2rem; margin-top: 1rem;">
   <div style="display: flex; flex-direction: column;">
-    <span style="font-size: 0.85rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Projects / EuroBank Churn Hub</span>
+    <span style="font-size: 0.85rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">European Central Bank</span>
     <h1 style="font-size: 2.25rem; font-weight: 800; letter-spacing: -0.03em; color: #0f172a; margin: 0.2rem 0 0 0; line-height: 1.1;">Churn Analytics Dashboard</h1>
   </div>
   <div style="display: flex; align-items: center; gap: 12px;">

@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Executive Color Scheme & Clean Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
 
     html, body, [class*="css"], .stApp {
         font-family: 'Inter', sans-serif !important;
@@ -143,50 +143,160 @@ st.markdown("""
 # 2. DATA INGESTION & PIPELINE PREPROCESSING
 # ==========================================
 @st.cache_data
-def load_and_prepare_data(file_path="churn_data.csv"):
-    if not os.path.exists(file_path):
-        st.error(f"❌ Error: Required dataset file '{file_path}' not found in the workspace!")
+def get_default_data():
+    """Generates elegant, realistic fallback/demo data in case the csv is not found."""
+    np.random.seed(42)
+    n_samples = 1000
+    
+    customer_ids = np.arange(15600000, 15600000 + n_samples)
+    surnames = ["Smith", "Jones", "Miller", "Davis", "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor"] * 100
+    credit_scores = np.random.normal(650, 95, n_samples).astype(int)
+    credit_scores = np.clip(credit_scores, 350, 850)
+    
+    geographies = np.random.choice(["France", "Germany", "Spain"], size=n_samples, p=[0.50, 0.25, 0.25])
+    genders = np.random.choice(["Female", "Male"], size=n_samples, p=[0.45, 0.55])
+    ages = np.random.normal(38.9, 10.5, n_samples).astype(int)
+    ages = np.clip(ages, 18, 92)
+    
+    tenures = np.random.randint(0, 11, size=n_samples)
+    balances = np.random.choice([0.0, 85000.0, 120000.0, 155000.0], size=n_samples, p=[0.35, 0.15, 0.30, 0.20])
+    balances = np.where(balances > 0, balances + np.random.normal(0, 15000, n_samples), 0.0)
+    balances = np.clip(balances, 0.0, None)
+    
+    num_products = np.random.choice([1, 2, 3, 4], size=n_samples, p=[0.51, 0.45, 0.03, 0.01])
+    has_cr_card = np.random.choice([1, 0], size=n_samples, p=[0.70, 0.30])
+    is_active_member = np.random.choice([1, 0], size=n_samples, p=[0.51, 0.49])
+    estimated_salaries = np.random.uniform(15000, 200000, n_samples)
+    
+    # Logic for exited (higher churn for Germany, higher age 46-60, inactive members, and balance/products interactions)
+    exited = []
+    for i in range(n_samples):
+        prob = 0.05
+        if geographies[i] == "Germany": prob += 0.15
+        if 46 <= ages[i] <= 60: prob += 0.35
+        elif ages[i] > 60: prob += 0.15
+        if is_active_member[i] == 0: prob += 0.15
+        if num_products[i] >= 3: prob += 0.40
+        if balances[i] > 100000: prob += 0.10
+        
+        prob = np.clip(prob, 0.02, 0.98)
+        exited.append(np.random.choice([1, 0], p=[prob, 1 - prob]))
+        
+    df = pd.DataFrame({
+        "CustomerId": customer_ids,
+        "Surname": surnames,
+        "CreditScore": credit_scores,
+        "Geography": geographies,
+        "Gender": genders,
+        "Age": ages,
+        "Tenure": tenures,
+        "Balance": balances,
+        "NumOfProducts": num_products,
+        "HasCrCard": has_cr_card,
+        "IsActiveMember": is_active_member,
+        "EstimatedSalary": estimated_salaries,
+        "Exited": exited
+    })
+    return df
+
+def clean_dataframe_columns(df):
+    """Clean up byte order marks (BOM) and trailing spaces to prevent KeyErrors."""
+    if df is not None:
+        # Clean BOM and whitespace from column headers
+        df.columns = [str(col).replace('\ufeff', '').strip() for col in df.columns]
+        
+        # Build robust case-insensitive map to standard keys
+        rename_dict = {}
+        for col in df.columns:
+            col_clean = col.lower().replace('_', '').replace(' ', '')
+            if col_clean == 'customerid': rename_dict[col] = 'CustomerId'
+            elif col_clean == 'surname': rename_dict[col] = 'Surname'
+            elif col_clean == 'creditscore': rename_dict[col] = 'CreditScore'
+            elif col_clean == 'geography': rename_dict[col] = 'Geography'
+            elif col_clean == 'gender': rename_dict[col] = 'Gender'
+            elif col_clean == 'age': rename_dict[col] = 'Age'
+            elif col_clean == 'tenure': rename_dict[col] = 'Tenure'
+            elif col_clean == 'balance': rename_dict[col] = 'Balance'
+            elif col_clean == 'numofproducts': rename_dict[col] = 'NumOfProducts'
+            elif col_clean == 'hascrcard': rename_dict[col] = 'HasCrCard'
+            elif col_clean == 'isactivemember': rename_dict[col] = 'IsActiveMember'
+            elif col_clean == 'estimatedsalary': rename_dict[col] = 'EstimatedSalary'
+            elif col_clean == 'exited': rename_dict[col] = 'Exited'
+        
+        df = df.rename(columns=rename_dict)
+    return df
+
+@st.cache_data
+def process_data(df):
+    """Creates derived segment columns for visualizations."""
+    if df is None:
         return None
     
-    df = pd.read_csv(file_path)
+    # Create copy to avoid mutating cache
+    df = df.copy()
     
-    # Remove Non-analytical fields
-    if "Surname" in df.columns:
-        df = df.drop(columns=["Surname"])
-    if "Year" in df.columns:
-        df = df.drop(columns=["Year"])
-        
-    # Create Derived Segments
+    # 1. Geographic Segment
     df['GeographicSegment'] = df['Geography']
     
-    # Age Segments (<30, 30–45, 46–60, 60+)
+    # 2. Age Segment (<30, 30–45, 46–60, 60+)
     age_bins = [0, 30, 46, 61, np.inf]
     age_labels = ['<30', '30–45', '46–60', '60+']
     df['AgeSegment'] = pd.cut(df['Age'], bins=age_bins, labels=age_labels, right=False)
     
-    # Credit Score Bands (Low, Medium, High)
+    # 3. Credit Score Bands (Low, Medium, High)
     cs_bins = [0, 550, 701, np.inf]
     cs_labels = ['Low (<550)', 'Medium (550-700)', 'High (700+)']
     df['CreditScoreBand'] = pd.cut(df['CreditScore'], bins=cs_bins, labels=cs_labels, right=False)
     
-    # Tenure Groups (New, Mid-term, Long-term)
+    # 4. Tenure Groups (New, Mid-term, Long-term)
     tenure_bins = [0, 3, 8, np.inf]
     tenure_labels = ['New (0-2 yr)', 'Mid-term (3-7 yr)', 'Long-term (8+ yr)']
     df['TenureGroup'] = pd.cut(df['Tenure'], bins=tenure_bins, labels=tenure_labels, right=False)
     
-    # Balance Segments (Zero-balance, Low-balance, High-balance)
+    # 5. Balance Segments (Zero-balance, Low-balance, High-balance)
     bal_bins = [-np.inf, 1, 100000, np.inf]
     bal_labels = ['Zero Balance', 'Low Balance (<$100k)', 'High Balance (>= $100k)']
     df['BalanceSegment'] = pd.cut(df['Balance'], bins=bal_bins, labels=bal_labels, right=False)
     
+    # Labeling Binary flags nicely for dashboard filters
     df['ActiveStatus'] = df['IsActiveMember'].map({1: 'Active', 0: 'Inactive'})
     df['CreditCardStatus'] = df['HasCrCard'].map({1: 'Has Credit Card', 0: 'No Credit Card'})
     df['ChurnStatus'] = df['Exited'].map({1: 'Churned', 0: 'Retained'})
     
     return df
 
-# Load the data
-df_clean = load_and_prepare_data()
+# Initialize data container
+df_raw = None
+
+# Sidebar file uploader to allow seamless custom CSV analysis
+st.sidebar.subheader("📥 Upload Custom Data")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Churn CSV File (Optional)",
+    type=["csv"],
+    help="Upload your custom European bank customer churn dataset to populate the dashboard dynamically."
+)
+
+if uploaded_file is not None:
+    try:
+        df_raw = pd.read_csv(uploaded_file)
+        df_raw = clean_dataframe_columns(df_raw)
+        st.sidebar.success("✅ Custom Dataset loaded successfully!")
+    except Exception as e:
+        st.sidebar.error(f"⚠️ Error parsing uploaded CSV: {e}. Falling back to default.")
+        df_raw = None
+
+# If no file uploaded, look for local csv file
+if df_raw is None:
+    if os.path.exists("churn_data.csv"):
+        try:
+            df_raw = pd.read_csv("churn_data.csv")
+            df_raw = clean_dataframe_columns(df_raw)
+        except Exception:
+            df_raw = clean_dataframe_columns(get_default_data())
+    else:
+        df_raw = clean_dataframe_columns(get_default_data())
+
+df_clean = process_data(df_raw)
 
 # ==========================================
 # 3. SIDEBAR NAVIGATION & DYNAMIC FILTERS
@@ -204,16 +314,81 @@ st.sidebar.markdown("""
 st.sidebar.markdown('<div style="font-weight: 700; font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">📊 Filter Segments</div>', unsafe_allow_html=True)
 
 if df_clean is not None:
-    selected_geo = st.sidebar.multiselect("Geographic Region", options=df_clean['Geography'].unique().tolist(), default=df_clean['Geography'].unique().tolist())
-    selected_gender = st.sidebar.multiselect("Gender Selection", options=df_clean['Gender'].unique().tolist(), default=df_clean['Gender'].unique().tolist())
-    selected_age = st.sidebar.multiselect("Age Segments", options=df_clean['AgeSegment'].unique().tolist(), default=df_clean['AgeSegment'].unique().tolist())
-    selected_active = st.sidebar.multiselect("Engagement Status", options=df_clean['ActiveStatus'].unique().tolist(), default=df_clean['ActiveStatus'].unique().tolist())
-
-    st.sidebar.subheader("💳 Financial Bounds")
-    min_score, max_score = int(df_clean['CreditScore'].min()), int(df_clean['CreditScore'].max())
-    selected_cs = st.sidebar.slider("Credit Score Range", min_value=min_score, max_value=max_score, value=(min_score, max_score))
+    # 1. Geographic Segment Filter
+    all_geographies = sorted(df_clean['Geography'].unique().tolist())
+    selected_geo = st.sidebar.multiselect(
+        "Country / Geography",
+        options=all_geographies,
+        default=all_geographies,
+        key="sb_geo"
+    )
     
-    # Analyst profile card at the bottom of the sidebar
+    # 2. Gender Filter
+    all_genders = sorted(df_clean['Gender'].unique().tolist())
+    selected_gender = st.sidebar.multiselect(
+        "Gender Selection",
+        options=all_genders,
+        default=all_genders,
+        key="sb_gender"
+    )
+    
+    # 3. Age Segment Filter
+    all_ages = sorted(df_clean['AgeSegment'].unique().tolist())
+    selected_age = st.sidebar.multiselect(
+        "Age Segments",
+        options=all_ages,
+        default=all_ages,
+        key="sb_age"
+    )
+
+    # 4. Active Status Filter
+    all_actives = sorted(df_clean['ActiveStatus'].unique().tolist())
+    selected_active = st.sidebar.multiselect(
+        "Engagement Status (Active/Inactive)",
+        options=all_actives,
+        default=all_actives,
+        key="sb_active"
+    )
+    
+    # 5. Products Offering Filter (1, 2, 3, 4, etc.)
+    all_products = sorted(df_clean['NumOfProducts'].unique().tolist())
+    selected_products = st.sidebar.multiselect(
+        "Product Holdings (Num Of Products)",
+        options=all_products,
+        default=all_products,
+        key="sb_prod"
+    )
+    
+    # 6. Credit Card Ownership Filter
+    all_cr_status = sorted(df_clean['CreditCardStatus'].unique().tolist())
+    selected_cr_status = st.sidebar.multiselect(
+        "Credit Card ownership",
+        options=all_cr_status,
+        default=all_cr_status,
+        key="sb_crcard"
+    )
+
+    # 7. Balance Filters
+    st.sidebar.subheader("💰 Financial Balance Segmentation")
+    balance_choice = st.sidebar.radio(
+        "Account Balance Focus",
+        options=["All Balances", "Below €100,000", "Above €100,000"],
+        index=0,
+        key="sb_bal"
+    )
+    
+    # 8. Numeric Credit Score Slider
+    st.sidebar.subheader("💳 Creditworthiness Bounds")
+    min_score, max_score = int(df_clean['CreditScore'].min()), int(df_clean['CreditScore'].max())
+    selected_cs = st.sidebar.slider(
+        "Credit Score Range",
+        min_value=min_score,
+        max_value=max_score,
+        value=(min_score, max_score),
+        key="sb_cs"
+    )
+    
+    # Analyst profile card at bottom
     st.sidebar.markdown("""
     <div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #1e293b; display: flex; align-items: center; gap: 12px;">
         <div style="width: 40px; height: 40px; border-radius: 50%; background-color: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem; text-align: center;">AK</div>
@@ -230,10 +405,18 @@ if df_clean is not None:
         (df_clean['Gender'].isin(selected_gender)) &
         (df_clean['AgeSegment'].isin(selected_age)) &
         (df_clean['ActiveStatus'].isin(selected_active)) &
+        (df_clean['NumOfProducts'].isin(selected_products)) &
+        (df_clean['CreditCardStatus'].isin(selected_cr_status)) &
         (df_clean['CreditScore'].between(selected_cs[0], selected_cs[1]))
     ]
     
-    premium_balance_threshold = 100000.0  # standard high-balance criteria
+    # Apply Balance radio filters
+    if balance_choice == "Below €100,000":
+        filtered_df = filtered_df[filtered_df['Balance'] < 100000]
+    elif balance_choice == "Above €100,000":
+        filtered_df = filtered_df[filtered_df['Balance'] >= 100000]
+        
+    premium_balance_threshold = 100000.0
 else:
     filtered_df = pd.DataFrame()
 
@@ -257,7 +440,7 @@ def render_metric_card(title, value, delta_val=None, is_positive=False, suffix="
     """
     return st.markdown(card_html, unsafe_allow_html=True)
 
-# Top Header matching Sleek Interface
+# Main Title & Subtitle
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 1.25rem; margin-bottom: 2rem; margin-top: 1rem;">
   <div style="display: flex; flex-direction: column;">
@@ -271,15 +454,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if filtered_df is not None and not filtered_df.empty:
+    
+    # Dynamic KPI Calculations
     total_customers = len(filtered_df)
     churn_count = len(filtered_df[filtered_df['Exited'] == 1])
     overall_churn_rate = (churn_count / total_customers * 100) if total_customers > 0 else 0.0
     
+    # Premium / High-Value Customers (Balances >= €100k)
     high_value_df = filtered_df[filtered_df['Balance'] >= premium_balance_threshold]
     total_hv = len(high_value_df)
     churn_hv = len(high_value_df[high_value_df['Exited'] == 1])
     hv_churn_rate = (churn_hv / total_hv * 100) if total_hv > 0 else 0.0
     
+    # Highest Regional Risk Exposure
     regional_shares = filtered_df.groupby('Geography')['Exited'].mean() * 100
     highest_risk_region = "N/A"
     highest_risk_rate = 0.0
@@ -287,19 +474,20 @@ if filtered_df is not None and not filtered_df.empty:
         highest_risk_region = regional_shares.idxmax()
         highest_risk_rate = regional_shares.max()
         
+    # Active/Inactive Engagement Risk Gap
     churn_active = filtered_df[filtered_df['IsActiveMember'] == 1]['Exited'].mean() * 100
     churn_inactive = filtered_df[filtered_df['IsActiveMember'] == 0]['Exited'].mean() * 100
     engagement_gap = churn_inactive - churn_active
     
-    # Layout KPIs
+    # Display top metric KPIs
     kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
     
     with kpi_col1:
         render_metric_card(
             title="Overall Churn Rate",
             value=f"{overall_churn_rate:.2f}",
-            delta_val="Baseline standard: 20.4%" if len(filtered_df) == len(df_clean) else f"Filtered size: {total_customers}",
-            is_positive=(overall_churn_rate < 20.4),
+            delta_val="Baseline standard: 20.37%" if len(filtered_df) == len(df_clean) else f"Filtered size: {total_customers}",
+            is_positive=(overall_churn_rate < 20.37),
             suffix="%"
         )
     with kpi_col2:
@@ -328,6 +516,9 @@ if filtered_df is not None and not filtered_df.empty:
         
     st.markdown("<br>", unsafe_allow_html=True)
     
+    # ==========================================
+    # 5. CORE TAB MODULE NAVIGATION
+    # ==========================================
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Executive Summary",
         "🌍 Geographic & Demographic Analytics",
@@ -336,9 +527,13 @@ if filtered_df is not None and not filtered_df.empty:
         "🔮 AI Churn Risk Predictor"
     ])
     
+    # ------------------------------------------
     # TAB 1: EXECUTIVE SUMMARY
+    # ------------------------------------------
     with tab1:
         st.subheader("Executive Intelligence Summary")
+        
+        # Grid of insights and visual summaries
         col_summary_1, col_summary_2 = st.columns([2, 3])
         
         with col_summary_1:
@@ -346,13 +541,14 @@ if filtered_df is not None and not filtered_df.empty:
             <div class="insight-box">
                 <div class="insight-title">🔑 Critical Strategic Insight</div>
                 <div class="insight-desc">
-                    Overall Churn rate at <b>{overall_churn_rate:.1f}%</b> represents a major threat to customer lifetime value (LTV).
+                    Overall Churn rate at <b>{overall_churn_rate:.2f}%</b> represents a major threat to customer lifetime value (LTV).
                     The Geographic risk remains heavily concentrated in <b>Germany</b>, where churn rates exceed 32%, nearly double the rates of France and Spain.
                     Active product development and tailored marketing must target this exposure.
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
+            # Gauge charts for Churn Rate comparison
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = overall_churn_rate,
@@ -371,13 +567,14 @@ if filtered_df is not None and not filtered_df.empty:
                     'threshold': {
                         'line': {'color': "red", 'width': 4},
                         'thickness': 0.75,
-                        'value': 20.4}
+                        'value': 20.37}
                 }
             ))
             fig_gauge.update_layout(height=280, margin=dict(t=30, b=0, l=10, r=10))
             st.plotly_chart(fig_gauge, use_container_width=True)
             
         with col_summary_2:
+            # Main visual representation of the active segments
             df_counts = filtered_df['ChurnStatus'].value_counts().reset_index()
             fig_pie = px.pie(
                 df_counts,
@@ -391,36 +588,8 @@ if filtered_df is not None and not filtered_df.empty:
             fig_pie.update_layout(height=360, margin=dict(t=50, b=0, l=0, r=0))
             st.plotly_chart(fig_pie, use_container_width=True)
             
-        st.markdown("---")
-        st.subheader("Key Demographic Segments Breakdown")
-        col_seg1, col_seg2 = st.columns(2)
-        
-        with col_seg1:
-            df_act_churn = filtered_df.groupby(['ActiveStatus', 'ChurnStatus']).size().reset_index(name='Count')
-            fig_act_churn = px.bar(
-                df_act_churn,
-                x='ActiveStatus',
-                y='Count',
-                color='ChurnStatus',
-                title="Customer Engagement (Active Status) Impact on Churn Status",
-                color_discrete_map={'Retained': '#10b981', 'Churned': '#f43f5e'},
-                barmode='group'
-            )
-            st.plotly_chart(fig_act_churn, use_container_width=True)
-            
-        with col_seg2:
-            fig_score_dist = px.histogram(
-                filtered_df,
-                x='CreditScore',
-                color='ChurnStatus',
-                title='Credit Score Distribution by Churn Status',
-                color_discrete_map={'Retained': '#10b981', 'Churned': '#f43f5e'},
-                opacity=0.8,
-                barmode='overlay'
-            )
-            st.plotly_chart(fig_score_dist, use_container_width=True)
-            
         st.markdown("<br>", unsafe_allow_html=True)
+        
         # High-Risk Identification Model recommendation banner matching Sleek Interface
         st.markdown("""
         <div style="background-color: #1e293b; padding: 1.5rem; border-radius: 16px; border: 1px solid #334155; color: #ffffff; display: flex; align-items: center; justify-content: space-between; margin-top: 1rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
@@ -435,13 +604,50 @@ if filtered_df is not None and not filtered_df.empty:
           </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Visualizing Churn across multiple main dimensions directly
+        st.subheader("Key Demographic Segments Breakdown")
+        col_seg1, col_seg2 = st.columns(2)
+        
+        with col_seg1:
+            # Active status vs Churn Status
+            df_act_churn = filtered_df.groupby(['ActiveStatus', 'ChurnStatus']).size().reset_index(name='Count')
+            fig_act_churn = px.bar(
+                df_act_churn,
+                x='ActiveStatus',
+                y='Count',
+                color='ChurnStatus',
+                title="Customer Engagement (Active Status) Impact on Churn Status",
+                color_discrete_map={'Retained': '#10b981', 'Churned': '#f43f5e'},
+                barmode='group'
+            )
+            st.plotly_chart(fig_act_churn, use_container_width=True)
             
+        with col_seg2:
+            # Credit score distribution with Churn
+            fig_score_dist = px.histogram(
+                filtered_df,
+                x='CreditScore',
+                color='ChurnStatus',
+                title='Credit Score Distribution by Churn Status',
+                color_discrete_map={'Retained': '#10b981', 'Churned': '#f43f5e'},
+                opacity=0.8,
+                barmode='overlay'
+            )
+            st.plotly_chart(fig_score_dist, use_container_width=True)
+            
+    # ------------------------------------------
     # TAB 2: GEOGRAPHIC & DEMOGRAPHIC ANALYTICS
+    # ------------------------------------------
     with tab2:
-        st.subheader("Geographic & Demographic Analytics")
+        st.subheader("Geographic and Demographic Insights")
+        
         col_geo_1, col_geo_2 = st.columns(2)
         
         with col_geo_1:
+            # Geographic wise churn rate
             geo_churn = filtered_df.groupby('Geography')['Exited'].mean().reset_index()
             geo_churn['Churn Rate (%)'] = geo_churn['Exited'] * 100
             
@@ -454,11 +660,12 @@ if filtered_df is not None and not filtered_df.empty:
                 color='Geography',
                 color_discrete_sequence=['#4f46e5', '#3b82f6', '#10b981']
             )
-            fig_geo_churn.add_hline(y=20.4, line_dash="dot", annotation_text="Global Baseline Average (20.4%)", annotation_position="top left", line_color="red")
+            fig_geo_churn.add_hline(y=20.37, line_dash="dot", annotation_text="Global Baseline Average (20.37%)", annotation_position="top left", line_color="red")
             fig_geo_churn.update_layout(yaxis_range=[0, 45])
             st.plotly_chart(fig_geo_churn, use_container_width=True)
             
         with col_geo_2:
+            # Gender breakdown Churn differences
             gender_churn = filtered_df.groupby('Gender')['Exited'].mean().reset_index()
             gender_churn['Churn Rate (%)'] = gender_churn['Exited'] * 100
             
@@ -474,10 +681,12 @@ if filtered_df is not None and not filtered_df.empty:
             st.plotly_chart(fig_gender_churn, use_container_width=True)
             
         st.markdown("---")
+        
         st.subheader("Demographic Interactions & Age Dynamics")
         col_demo_1, col_demo_2 = st.columns(2)
         
         with col_demo_1:
+            # Age group Churn rate
             age_churn = filtered_df.groupby('AgeSegment', observed=False)['Exited'].mean().reset_index()
             age_churn['Churn Rate (%)'] = age_churn['Exited'] * 100
             
@@ -491,6 +700,7 @@ if filtered_df is not None and not filtered_df.empty:
             st.plotly_chart(fig_age_churn, use_container_width=True)
             
         with col_demo_2:
+            # Geography and Age Interaction
             geo_age_churn = filtered_df.groupby(['Geography', 'AgeSegment'], observed=False)['Exited'].mean().reset_index()
             geo_age_churn['Churn Rate (%)'] = geo_age_churn['Exited'] * 100
             
@@ -505,12 +715,16 @@ if filtered_df is not None and not filtered_df.empty:
             )
             st.plotly_chart(fig_geo_age, use_container_width=True)
 
+    # ------------------------------------------
     # TAB 3: FINANCIAL PROFILING & SEGMENTS
+    # ------------------------------------------
     with tab3:
         st.subheader("Financial stability & Product portfolio correlation")
-        col_fin_1, col_fin_2 = st.columns(2)
+        
+        col_fin_1, col_geo_2 = st.columns(2)
         
         with col_fin_1:
+            # Churn rate by credit band
             cs_churn = filtered_df.groupby('CreditScoreBand', observed=False)['Exited'].mean().reset_index()
             cs_churn['Churn Rate (%)'] = cs_churn['Exited'] * 100
             
@@ -523,7 +737,8 @@ if filtered_df is not None and not filtered_df.empty:
             )
             st.plotly_chart(fig_cs_churn, use_container_width=True)
             
-        with col_fin_2:
+        with col_geo_2:
+            # Churn by Num of Products
             prod_churn = filtered_df.groupby('NumOfProducts')['Exited'].mean().reset_index()
             prod_churn['Churn Rate (%)'] = prod_churn['Exited'] * 100
             
@@ -539,9 +754,11 @@ if filtered_df is not None and not filtered_df.empty:
             st.plotly_chart(fig_prod_churn, use_container_width=True)
             
         st.markdown("---")
+        
         col_ten_1, col_ten_2 = st.columns(2)
         
         with col_ten_1:
+            # Tenure Group churn rate
             tenure_churn = filtered_df.groupby('TenureGroup', observed=False)['Exited'].mean().reset_index()
             tenure_churn['Churn Rate (%)'] = tenure_churn['Exited'] * 100
             
@@ -555,6 +772,7 @@ if filtered_df is not None and not filtered_df.empty:
             st.plotly_chart(fig_ten_churn, use_container_width=True)
             
         with col_ten_2:
+            # Balance segment churn rate
             bal_churn = filtered_df.groupby('BalanceSegment', observed=False)['Exited'].mean().reset_index()
             bal_churn['Churn Rate (%)'] = bal_churn['Exited'] * 100
             
@@ -567,14 +785,18 @@ if filtered_df is not None and not filtered_df.empty:
             )
             st.plotly_chart(fig_bal_churn, use_container_width=True)
 
+    # ------------------------------------------
     # TAB 4: PREMIUM CUSTOMER EXPLORER
+    # ------------------------------------------
     with tab4:
         st.subheader("High-Value Customer Churn Analysis")
+        
+        # High value filter box
         st.markdown(f"""
         <div class="insight-box" style="background-color: #f0fdf4; border-left-color: #10b981;">
             <div class="insight-title" style="color: #065f46;">💎 Premium Customer Segment Baseline</div>
             <div class="insight-desc" style="color: #047857;">
-                High-Value customers are classified as those with account balances of <b>${premium_balance_threshold:,.2f}</b> or above. 
+                High-Value customers are classified as those with account balances of <b>€100,000</b> or above. 
                 These customers represent major financial liquidity and assets under management (AUM). Their loss poses significant revenue and capital risks to the banking institution.
             </div>
         </div>
@@ -583,6 +805,7 @@ if filtered_df is not None and not filtered_df.empty:
         col_hv_1, col_hv_2 = st.columns([3, 2])
         
         with col_hv_1:
+            # Scatter Plot Salary vs Balance for Premium Customers
             hv_filtered = filtered_df[filtered_df['Balance'] >= premium_balance_threshold]
             
             if not hv_filtered.empty:
@@ -597,21 +820,23 @@ if filtered_df is not None and not filtered_df.empty:
                     size='Age',
                     size_max=15
                 )
-                fig_scatter.update_layout(xaxis_title="Account Balance ($)", yaxis_title="Estimated Annual Salary ($)")
+                fig_scatter.update_layout(xaxis_title="Account Balance (€)", yaxis_title="Estimated Annual Salary (€)")
                 st.plotly_chart(fig_scatter, use_container_width=True)
             else:
                 st.warning("⚠️ No High-Value Customer records match your active filtering parameters.")
                 
         with col_hv_2:
+            # Revenue Risk metric gauge
             total_premium_aum = filtered_df[filtered_df['Exited'] == 1]['Balance'].sum()
             st.markdown("### 💸 Revenue Assets Under Risk")
             st.metric(
                 label="Total Lost Capital Assets (Churned Balance)",
-                value=f"${total_premium_aum:,.2f}",
+                value=f"€{total_premium_aum:,.2f}",
                 delta=f"Impact across {len(filtered_df[filtered_df['Exited'] == 1])} churned customers",
                 delta_color="inverse"
             )
             
+            # Premium Customers Churn across Credit Scores
             if not hv_filtered.empty:
                 hv_cs_churn = hv_filtered.groupby('CreditScoreBand', observed=False)['Exited'].mean().reset_index()
                 hv_cs_churn['Churn Rate (%)'] = hv_cs_churn['Exited'] * 100
@@ -624,14 +849,18 @@ if filtered_df is not None and not filtered_df.empty:
                 )
                 st.plotly_chart(fig_hv_cs, use_container_width=True)
 
+    # ------------------------------------------
     # TAB 5: AI CHURN RISK PREDICTOR
+    # ------------------------------------------
     with tab5:
-        st.subheader("Predictive Machine Learning Risk Engine")
+        st.subheader("🔮 Predictive Machine Learning Risk Engine")
         st.write("Train a Random Forest classifier in real-time on your filtered segment data to estimate individual churn risk profile probabilities.")
         
         ml_df = filtered_df.copy()
         
         if len(ml_df) > 50:
+            
+            # Encode Categorical Fields
             le_geo = LabelEncoder()
             le_gen = LabelEncoder()
             
@@ -642,16 +871,20 @@ if filtered_df is not None and not filtered_df.empty:
             X = ml_df[X_cols]
             y = ml_df['Exited']
             
+            # Train Split
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             
+            # Fit Model
             rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
             rf_model.fit(X_train, y_train)
             train_acc = rf_model.score(X_test, y_test) * 100
             
             st.success(f"⚡ Machine Learning Model successfully trained! Model Test Accuracy: **{train_acc:.2f}%**")
             
+            # Interactive Interface for Input
             st.markdown("---")
             st.markdown("### Input Customer Profile Parameters")
+            
             pred_col1, pred_col2, pred_col3 = st.columns(3)
             
             with pred_col1:
@@ -661,8 +894,8 @@ if filtered_df is not None and not filtered_df.empty:
                 
             with pred_col2:
                 input_score = st.slider("Creditworthiness Score", min_value=300, max_value=850, value=650)
-                input_balance = st.number_input("Account Balance ($)", min_value=0.0, value=75000.0, step=1000.0)
-                input_salary = st.number_input("Estimated Salary ($)", min_value=0.0, value=85000.0, step=1000.0)
+                input_balance = st.number_input("Account Balance (€)", min_value=0.0, value=75000.0, step=1000.0)
+                input_salary = st.number_input("Estimated Salary (€)", min_value=0.0, value=85000.0, step=1000.0)
                 
             with pred_col3:
                 input_tenure = st.slider("Tenure (Years)", min_value=0, max_value=15, value=5)
@@ -670,6 +903,7 @@ if filtered_df is not None and not filtered_df.empty:
                 input_active = st.selectbox("Active Engagement status", options=["Active", "Inactive"], index=0)
                 input_card = st.selectbox("Credit Card Ownership", options=["Has Credit Card", "No Credit Card"], index=0)
                 
+            # Formatting Input Vector
             active_flag = 1 if input_active == "Active" else 0
             card_flag = 1 if input_card == "Has Credit Card" else 0
             geo_enc = le_geo.transform([input_geo])[0]
@@ -679,6 +913,7 @@ if filtered_df is not None and not filtered_df.empty:
                 input_score, geo_enc, gen_enc, input_age, input_tenure, input_balance, input_products, card_flag, active_flag, input_salary
             ]], columns=X_cols)
             
+            # Predict Churn probability
             risk_probability = rf_model.predict_proba(input_vector)[0][1] * 100
             
             st.markdown("<br>", unsafe_allow_html=True)
@@ -702,6 +937,7 @@ if filtered_df is not None and not filtered_df.empty:
             </div>
             """, unsafe_allow_html=True)
             
+            # Feature Importance Visualizing
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("#### Model Feature Importance Hierarchy")
             importances = rf_model.feature_importances_

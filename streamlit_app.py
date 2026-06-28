@@ -65,11 +65,24 @@ st.markdown("""
         opacity: 1 !important;
     }
     
-    /* Make sure radio choices (below/above €100k) are bright white and bold */
-    [data-testid="stSidebar"] [data-testid="stRadio"] * {
+    /* Ensure all radio options are bright white, high-contrast, and bold */
+    [data-testid="stSidebar"] [data-testid="stRadio"] *,
+    [data-testid="stSidebar"] [data-testid="stRadio"] label,
+    [data-testid="stSidebar"] [data-testid="stRadio"] p,
+    [data-testid="stSidebar"] [data-testid="stRadio"] span,
+    [data-testid="stSidebar"] [data-testid="stRadio"] div,
+    [data-testid="stSidebar"] [class*="stRadio"] *,
+    [data-testid="stSidebar"] [class*="stRadio"] label,
+    [data-testid="stSidebar"] [class*="stRadio"] p,
+    [data-testid="stSidebar"] [class*="stRadio"] span,
+    [data-testid="stSidebar"] div[role="radiogroup"] *,
+    [data-testid="stSidebar"] div[role="radiogroup"] p,
+    [data-testid="stSidebar"] div[role="radiogroup"] span,
+    [data-testid="stSidebar"] label[class*="st-"] p,
+    [data-testid="stSidebar"] label[class*="st-"] span {
         color: #ffffff !important;
         font-weight: 700 !important;
-        opacity: 1 !important;
+        opacity: 1.0 !important;
     }
     
     /* Make sure slider label and markers are bright white and bold */
@@ -87,20 +100,6 @@ st.markdown("""
     [data-testid="stSidebar"] div[data-testid="stMultiSelect"] div[role="button"] * {
         color: #0f172a !important;
         font-weight: 600 !important;
-    }
-    
-    /* File uploader button text and status */
-    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section button {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-    }
-    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section button * {
-        color: #0f172a !important;
-        font-weight: 700 !important;
-    }
-    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border: 1px dashed rgba(255, 255, 255, 0.2) !important;
     }
     
     /* Metric Card Styling */
@@ -485,30 +484,17 @@ def process_data(df):
 # Initialize data container
 df_raw = None
 
-# Sidebar file uploader to allow seamless custom CSV analysis
-st.sidebar.subheader("📥 Upload Custom Data")
-uploaded_file = st.sidebar.file_uploader(
-    "Upload Churn CSV File (Optional)",
-    type=["csv"],
-    help="Upload your custom European bank customer churn dataset to populate the dashboard with your own real records dynamically."
-)
+# Load dataset: first try the embedded high-fidelity EMBEDDED_CHURN_DATA (our local dataset)
+try:
+    embedded_df = pd.read_csv(io.StringIO(EMBEDDED_CHURN_DATA))
+    embedded_df = clean_dataframe_columns(embedded_df)
+    is_valid, missing_cols = validate_dataframe_schema(embedded_df)
+    if is_valid:
+        df_raw = embedded_df
+except Exception:
+    pass
 
-if uploaded_file is not None:
-    try:
-        uploaded_df = pd.read_csv(uploaded_file)
-        cleaned_df = clean_dataframe_columns(uploaded_df)
-        is_valid, missing_cols = validate_dataframe_schema(cleaned_df)
-        if is_valid:
-            df_raw = cleaned_df
-            st.sidebar.success("✅ Custom Dataset loaded successfully!")
-        else:
-            st.sidebar.error(f"⚠️ Error: Uploaded file is missing required columns: {', '.join(missing_cols)}. Falling back to default data.")
-            df_raw = None
-    except Exception as e:
-        st.sidebar.error(f"⚠️ Error parsing uploaded CSV: {e}. Falling back to default.")
-        df_raw = None
-
-# If no file uploaded or validation failed, look for local csv file
+# If embedded fails for any reason, look for local churn_data.csv file
 if df_raw is None:
     possible_paths = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "churn_data.csv"),
@@ -532,18 +518,7 @@ if df_raw is None:
         except Exception:
             pass
 
-# If STILL no dataset loaded, load from EMBEDDED_CHURN_DATA (our high fidelity local dataset)
-if df_raw is None:
-    try:
-        embedded_df = pd.read_csv(io.StringIO(EMBEDDED_CHURN_DATA))
-        embedded_df = clean_dataframe_columns(embedded_df)
-        is_valid, missing_cols = validate_dataframe_schema(embedded_df)
-        if is_valid:
-            df_raw = embedded_df
-    except Exception:
-        pass
-
-# Final safety fallback to generated data
+# Final safety fallback to generated data if all else fails
 if df_raw is None:
     df_raw = clean_dataframe_columns(get_default_data())
 
